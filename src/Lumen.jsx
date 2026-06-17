@@ -29,7 +29,7 @@ function makeStore(initial) {
 function freshWorkspace() {
   return {
     pages: {
-      home: { id: "home", title: "Benvenuto in Lumen", icon: "✦", parent: null, children: ["proj"], cover: "aurora", width: "normal", favorite: false, trashed: false },
+      home: { id: "home", title: "Benvenuto in Lumen", icon: "✦", parent: null, children: ["proj"], width: "normal", favorite: false, trashed: false },
       proj: { id: "proj", title: "Progetti", icon: "◷", parent: "home", children: [], cover: null, width: "normal", favorite: false, trashed: false },
     },
     order: ["home"],
@@ -44,7 +44,7 @@ function freshWorkspace() {
       proj: [{ id: uid(), type: "h2", text: "Progetti" }, { id: uid(), type: "p", text: "" }],
     },
     comments: {}, shares: {}, reactions: {}, currentPage: "home", theme: "dark",
-    inbox: [], reminders: [], publicPages: {},
+    inbox: [], reminders: [], publicPages: {}, files: [],
     settings: { sound: false, cursor: true, particles: true, soundscape: false, reduceMotion: false },
     gam: { streak: 0, lastActive: null, blocksCreated: 0, wordsWeek: 0, weekStart: null, achievements: [] },
   };
@@ -75,7 +75,6 @@ const A = {
     return nid; },
   rename: (id, title) => { pushHistory("rename"); store.set((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], title } } })); },
   setIcon: (id, icon) => { pushHistory("icon"); store.set((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], icon } } })); },
-  setCover: (id, cover) => { pushHistory("cover"); store.set((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], cover } } })); },
   setWidth: (id, width) => { pushHistory("width"); store.set((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], width } } })); },
   toggleFav: (id) => { pushHistory("fav"); store.set((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], favorite: !s.pages[id].favorite } } })); },
   duplicate: (id) => { pushHistory("duplicate");
@@ -139,10 +138,6 @@ const auth = (() => {
     async signIn({ email, password }) { await new Promise((r) => setTimeout(r, 450));
       const all = users(); const rec = all[email];
       if (!rec || rec.pass !== hash(password)) throw new Error("Email o password non corretti."); write(rec.user); return rec.user; },
-    async signInWithOAuth() { await new Promise((r) => setTimeout(r, 550));
-      const email = "utente.google@gmail.com"; const all = users();
-      if (!all[email]) { all[email] = { pass: "", user: { id: uid(), email, name: "Utente Google", avatar: null, theme: "dark", lang: "it", provider: "google" } }; saveUsers(all); }
-      write(all[email].user); return all[email].user; },
     signOut() { write(null); },
     updateUser(patch) { const u = { ...read(), ...patch }; const all = users(); if (all[u.email]) { all[u.email].user = u; saveUsers(all); } write(u); return u; },
   };
@@ -324,7 +319,6 @@ function CtxItem({ label, icon, onClick, danger }) {
 }
 
 /* ===== EDITOR + breadcrumb + copertina ===== */
-const COVERS = { aurora: "linear-gradient(120deg,#1a2a5e,#3a2c6e,#5FD3C6)", sunset: "linear-gradient(120deg,#E8A33D,#E8625D,#6e2c5e)", mist: "linear-gradient(120deg,#0F1730,#2a3a6e)", none: null };
 function Breadcrumb({ pageId }) {
   const pages = useStore((s) => s.pages); const trail = []; let p = pageId; while (p && pages[p]) { trail.unshift(pages[p]); p = pages[p].parent; }
   return (
@@ -337,7 +331,7 @@ function Editor({ pageId }) {
   const blocks = useStore((s) => s.blocks[pageId] || []);
   const page = useStore((s) => s.pages[pageId]);
   const drag = useRef({ from: null });
-  const [dragIdx, setDragIdx] = useState(null), [overIdx, setOverIdx] = useState(null), [coverMenu, setCoverMenu] = useState(false);
+  const [dragIdx, setDragIdx] = useState(null), [overIdx, setOverIdx] = useState(null);
   const update = (i, nb) => { const arr = [...blocks]; arr[i] = nb; A.setBlocks(pageId, arr); };
   const insertAfter = (i) => { const arr = [...blocks]; arr.splice(i + 1, 0, { id: uid(), type: "p", text: "" }); A.setBlocks(pageId, arr, "insert"); store.set((s) => ({ gam: { ...s.gam, blocksCreated: s.gam.blocksCreated + 1 } })); if (typeof checkAchievements === "function") checkAchievements(); setTimeout(() => { const el = document.querySelectorAll("[contenteditable]")[i + 1]; el && el.focus(); }, 0); };
   const removeAt = (i) => { if (blocks.length <= 1) return; A.setBlocks(pageId, blocks.filter((_, j) => j !== i), "delete"); setTimeout(() => { const els = document.querySelectorAll("[contenteditable]"); const el = els[Math.max(0, i - 1)]; el && el.focus(); }, 0); };
@@ -351,21 +345,10 @@ function Editor({ pageId }) {
   const maxW = page.width === "wide" ? 1040 : page.width === "full" ? "100%" : 740;
   return (
     <div>
-      {page.cover && (COVERS[page.cover] || (page.cover + "").startsWith("shader:")) && (
-        <div style={{ height: 180, background: COVERS[page.cover] || "transparent", position: "relative", overflow: "hidden" }}>
-          {(page.cover + "").startsWith("shader:") && <div style={{ position: "absolute", inset: 0 }}><ShaderCover variant={page.cover.split(":")[1]} /></div>}
-          <button onClick={() => setCoverMenu((m) => !m)} style={{ position: "absolute", right: 16, bottom: 12, ...btn, zIndex: 2 }}>Cambia copertina</button>
-          {coverMenu && (<div style={{ position: "absolute", right: 16, bottom: 48, zIndex: 30, background: T.panel, backdropFilter: "blur(16px)", border: "1px solid " + T.line, borderRadius: 10, padding: 6, display: "flex", gap: 6, flexWrap: "wrap", maxWidth: 280 }}>
-            {Object.keys(COVERS).map((c) => (<button key={c} onClick={() => { A.setCover(pageId, c === "none" ? null : c); setCoverMenu(false); }} title={c} style={{ width: 44, height: 28, borderRadius: 6, border: "1px solid " + T.line, cursor: "pointer", background: COVERS[c] || "transparent" }} />))}
-            {["shader:aurora", "shader:vapor", "shader:acid"].map((c) => (<button key={c} onClick={() => { A.setCover(pageId, c); setCoverMenu(false); }} title={c} style={{ width: 44, height: 28, borderRadius: 6, border: "1px solid " + T.amber, cursor: "pointer", background: "linear-gradient(135deg," + T.amber + "," + T.cyan + ")", position: "relative" }}><span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontSize: 9, color: "#000" }}>{"◉"}</span></button>))}
-          </div>)}
-        </div>
-      )}
       <div onPaste={(e) => { const txt = e.clipboardData.getData("text/plain"); if (txt && /\n/.test(txt) && txt.length > 80) { e.preventDefault(); const nb = smartPasteToBlocks(txt); A.setBlocks(pageId, [...blocks, ...nb], "paste"); toast("Incollato e formattato ✨"); } }} style={{ maxWidth: maxW, margin: "0 auto", padding: "32px 28px 200px", transition: "max-width .3s" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
           <Breadcrumb pageId={pageId} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {!page.cover && <button onClick={() => A.setCover(pageId, "aurora")} style={btn}>+ Copertina</button>}
             <button onClick={() => A.toggleFav(pageId)} style={{ ...btn, color: page.favorite ? T.amber : T.sub }}>{page.favorite ? "★" : "☆"} Preferiti</button>
             <select value={page.width} onChange={(e) => A.setWidth(pageId, e.target.value)} style={{ ...btn, cursor: "pointer" }}>
               <option value="normal">Normale</option><option value="wide">Larga</option><option value="full">Piena</option>
@@ -427,7 +410,7 @@ function ContextMenu({ ctx, onClose, onShare }) {
     </div>
   );
 }
-function Sidebar({ onSearch, onTrash, onTemplates, user, onProfile, extra }) {
+function Sidebar({ onSearch, onTrash, user, onProfile, extra }) {
   const order = useStore((s) => s.order);
   const pages = useStore((s) => s.pages);
   const theme = useStore((s) => s.theme);
@@ -437,6 +420,7 @@ function Sidebar({ onSearch, onTrash, onTemplates, user, onProfile, extra }) {
   const roots = order.filter((id) => pages[id] && !pages[id].trashed);
   const trashCount = Object.values(pages).filter((p) => p.trashed).length;
   const inboxCount = useStore((s) => s.inbox.length);
+  const filesCount = useStore((s) => s.files.length);
   const streak = useStore((s) => s.gam.streak);
   return (
     <aside style={{ width: 256, flexShrink: 0, height: "100vh", position: "sticky", top: 0, background: "rgba(10,15,30,.55)", backdropFilter: "blur(20px)", borderRight: "1px solid " + T.line, display: "flex", flexDirection: "column", zIndex: 10 }}>
@@ -459,12 +443,11 @@ function Sidebar({ onSearch, onTrash, onTemplates, user, onProfile, extra }) {
       </div>
       <div style={{ padding: 10, borderTop: "1px solid " + T.line, display: "flex", flexDirection: "column", gap: 2, maxHeight: 280, overflowY: "auto" }}>
         {extra && <SideBtn onClick={extra.onFocus}>{"◎"} Focus / Pomodoro</SideBtn>}
+        {extra && <SideBtn onClick={extra.onFiles}>{"🗂️"} File database{filesCount > 0 && <span style={{ marginLeft: "auto", background: T.cyan, color: T.bg, borderRadius: 10, fontSize: 10, padding: "1px 6px" }}>{filesCount}</span>}</SideBtn>}
         {extra && <SideBtn onClick={extra.onInbox}>{"📥"} Inbox{inboxCount > 0 && <span style={{ marginLeft: "auto", background: T.cyan, color: T.bg, borderRadius: 10, fontSize: 10, padding: "1px 6px" }}>{inboxCount}</span>}</SideBtn>}
         {extra && <SideBtn onClick={extra.onReminders}>{"⏰"} Promemoria</SideBtn>}
         {extra && <SideBtn onClick={extra.onStats}>{"🏆"} Statistiche{streak > 0 && <span style={{ marginLeft: "auto", fontSize: 11, color: T.amber }}>{"🔥"}{streak}</span>}</SideBtn>}
-        {extra && <SideBtn onClick={extra.onTimeMachine}>{"⏳"} Time Machine</SideBtn>}
         {extra && <SideBtn onClick={extra.onImport}>{"↓"} Importa</SideBtn>}
-        <SideBtn onClick={onTemplates}>{"◳"} Template</SideBtn>
         <SideBtn onClick={onTrash}>{"🗑"} Cestino{trashCount > 0 && <span style={{ marginLeft: "auto", background: T.danger, color: "#fff", borderRadius: 10, fontSize: 10, padding: "1px 6px" }}>{trashCount}</span>}</SideBtn>
       </div>
       <ContextMenu ctx={ctx} onClose={() => setCtx(null)} onShare={(id) => setShareFor(id)} />
@@ -494,25 +477,6 @@ function TrashPanel({ onClose }) {
 }
 
 /* ===== TEMPLATE ===== */
-const TEMPLATES = [
-  { key: "note", icon: "🗒", title: "Nota", desc: "Appunto rapido", build: () => ({ title: "Nuova nota", icon: "🗒", blocks: [{ id: uid(), type: "h1", text: "Nuova nota" }, { id: uid(), type: "p", text: new Date().toLocaleDateString("it-IT") }, { id: uid(), type: "p", text: "" }] }) },
-  { key: "project", icon: "🎯", title: "Progetto", desc: "Obiettivi, attivita, scadenze", build: () => ({ title: "Nuovo progetto", icon: "🎯", blocks: [{ id: uid(), type: "h1", text: "Nuovo progetto" }, { id: uid(), type: "callout", text: "**Obiettivo:** descrivi il risultato atteso." }, { id: uid(), type: "h2", text: "Attivita" }, { id: uid(), type: "todo", text: "Prima attivita", checked: false }, { id: uid(), type: "todo", text: "Seconda attivita", checked: false }, { id: uid(), type: "h2", text: "Note" }, { id: uid(), type: "p", text: "" }] }) },
-  { key: "wiki", icon: "📚", title: "Wiki", desc: "Base di conoscenza", build: () => ({ title: "Wiki", icon: "📚", blocks: [{ id: uid(), type: "h1", text: "Wiki" }, { id: uid(), type: "quote", text: "Indice della conoscenza del team." }, { id: uid(), type: "h2", text: "Sezioni" }, { id: uid(), type: "toggle", text: "Introduzione", open: false, childrenText: "Contenuto..." }, { id: uid(), type: "toggle", text: "Procedure", open: false, childrenText: "Contenuto..." }] }) },
-  { key: "diary", icon: "🌙", title: "Diario", desc: "Voce giornaliera", build: () => ({ title: "Diario - " + new Date().toLocaleDateString("it-IT"), icon: "🌙", blocks: [{ id: uid(), type: "h1", text: new Date().toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" }) }, { id: uid(), type: "h3", text: "Gratitudine" }, { id: uid(), type: "p", text: "" }, { id: uid(), type: "h3", text: "Cosa e successo" }, { id: uid(), type: "p", text: "" }] }) },
-];
-function TemplatesPanel({ onClose }) {
-  return (
-    <Modal title="Template" onClose={onClose} width={560}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        {TEMPLATES.map((t) => (<button key={t.key} onClick={() => { A.addPage(null, t.build()); onClose(); }} style={{ textAlign: "left", padding: 16, background: "rgba(122,150,210,.06)", border: "1px solid " + T.line, borderRadius: 14, cursor: "pointer", color: T.ink, transition: "transform .18s cubic-bezier(.2,1.3,.3,1)" }} onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-3px)")} onMouseLeave={(e) => (e.currentTarget.style.transform = "none")}>
-          <div style={{ fontSize: 28 }}>{t.icon}</div>
-          <div style={{ fontWeight: 600, marginTop: 8, fontFamily: "'Nohemi',sans-serif", fontSize: 17 }}>{t.title}</div>
-          <div style={{ fontSize: 12.5, color: T.sub }}>{t.desc}</div>
-        </button>))}
-      </div>
-    </Modal>
-  );
-}
 
 /* ===== CONDIVISIONE ===== */
 function ShareDialog({ pageId, onClose }) {
@@ -674,7 +638,6 @@ function AuthScreen() {
   const submit = async () => { setErr(""); setBusy(true);
     try { if (mode === "signup") await auth.signUp({ email, password, name }); else await auth.signIn({ email, password }); }
     catch (e) { setErr(e.message); } finally { setBusy(false); } };
-  const google = async () => { setBusy(true); try { await auth.signInWithOAuth(); } catch (e) { setErr(e.message); } finally { setBusy(false); } };
   return (
     <div style={{ minHeight: "100vh", position: "relative", display: "grid", placeItems: "center", color: T.ink, fontFamily: "'Nohemi',sans-serif", overflow: "hidden" }}>
       <InkScene theme="dark" />
@@ -694,9 +657,6 @@ function AuthScreen() {
           <Field label="Password"><input value={password} onChange={(e) => setPassword(e.target.value)} type="password" style={inp} placeholder="********" onKeyDown={(e) => e.key === "Enter" && submit()} /></Field>
           {err && <div style={{ color: T.danger, fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
           <button onClick={submit} disabled={busy} style={{ ...btnAmber, width: "100%", padding: "12px", fontSize: 15, opacity: busy ? .6 : 1, marginBottom: 10 }}>{busy ? "Attendi..." : mode === "signup" ? "Registrati" : "Accedi"}</button>
-          <button onClick={google} disabled={busy} style={{ ...btn, width: "100%", padding: "11px", fontSize: 14, marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <span style={{ width: 16, height: 16, borderRadius: "50%", background: "conic-gradient(#EA4335,#FBBC05,#34A853,#4285F4)" }} /> Continua con Google
-          </button>
           <div style={{ textAlign: "center", fontSize: 13, color: T.sub }}>{mode === "signup" ? "Hai gia un account? " : "Non hai un account? "}
             <button onClick={() => { setErr(""); setMode(mode === "signup" ? "login" : "signup"); }} style={{ background: "none", border: "none", color: T.cyan, cursor: "pointer", fontSize: 13 }}>{mode === "signup" ? "Accedi" : "Registrati"}</button>
           </div>
@@ -828,6 +788,118 @@ function burstConfetti() {
 }
 
 /* ===== INBOX / QUICK CAPTURE ===== */
+
+/* ===== FILE DATABASE — deposito file mostrati come database accessibile ===== */
+const FILE_LIMIT = 4 * 1024 * 1024; // ~4MB per file (limite localStorage)
+const FILES = {
+  add: (file) => new Promise((resolve, reject) => {
+    if (file.size > FILE_LIMIT) { toast("File troppo grande (max 4MB): " + file.name); reject(); return; }
+    const r = new FileReader();
+    r.onload = () => {
+      store.set((s) => ({ files: [{ id: uid(), name: file.name, type: file.type || "application/octet-stream", size: file.size, data: r.result, ts: now() }, ...s.files] }));
+      toast("Caricato: " + file.name); resolve();
+    };
+    r.onerror = () => { toast("Errore nel caricare " + file.name); reject(); };
+    r.readAsDataURL(file);
+  }),
+  remove: (id) => store.set((s) => ({ files: s.files.filter((f) => f.id !== id) })),
+  rename: (id, name) => store.set((s) => ({ files: s.files.map((f) => f.id === id ? { ...f, name } : f) })),
+};
+function fmtSize(b) { if (b < 1024) return b + " B"; if (b < 1048576) return (b / 1024).toFixed(1) + " KB"; return (b / 1048576).toFixed(1) + " MB"; }
+function fileIcon(type) {
+  if (type.startsWith("image/")) return "🖼️";
+  if (type.includes("pdf")) return "📕";
+  if (type.includes("zip") || type.includes("rar") || type.includes("compressed")) return "🗜️";
+  if (type.includes("word") || type.includes("document")) return "📘";
+  if (type.includes("sheet") || type.includes("excel") || type.includes("csv")) return "📗";
+  if (type.startsWith("video/")) return "🎬";
+  if (type.startsWith("audio/")) return "🎵";
+  if (type.startsWith("text/")) return "📄";
+  return "📎";
+}
+function FileDatabase({ onClose }) {
+  const files = useStore((s) => s.files);
+  const [view, setView] = useState("table"); // table | gallery
+  const [drag, setDrag] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const inputRef = useRef(null);
+  const totalSize = files.reduce((a, f) => a + f.size, 0);
+
+  const handleFiles = async (fileList) => { for (const f of Array.from(fileList)) { try { await FILES.add(f); } catch (e) {} } };
+  const onDrop = (e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); };
+  const openFile = (f) => { const w = window.open(); if (w) w.document.write('<iframe src="' + f.data + '" style="border:0;width:100%;height:100%;position:fixed;inset:0"></iframe>'); };
+  const downloadFile = (f) => { const a = document.createElement("a"); a.href = f.data; a.download = f.name; a.click(); };
+
+  return (
+    <Modal title="File database" onClose={onClose} width={680}>
+      {/* zona di rilascio */}
+      <div onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={onDrop}
+        onClick={() => inputRef.current && inputRef.current.click()}
+        style={{ border: "2px dashed " + (drag ? T.amber : T.line), borderRadius: 14, padding: "22px", textAlign: "center", cursor: "pointer", background: drag ? T.glass : "rgba(122,150,210,.04)", transition: "all .15s", marginBottom: 14 }}>
+        <div style={{ fontSize: 30, marginBottom: 6 }}>📥</div>
+        <div style={{ fontSize: 14, color: T.ink, fontWeight: 600 }}>Trascina qui i file o clicca per sceglierli</div>
+        <div style={{ fontSize: 11.5, color: T.sub, marginTop: 4 }}>Max 4MB per file · salvati localmente nel browser</div>
+        <input ref={inputRef} type="file" multiple hidden onChange={(e) => e.target.files && handleFiles(e.target.files)} />
+      </div>
+
+      {/* barra strumenti */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 12, color: T.sub, fontFamily: "'Nohemi'" }}>{files.length} file · {fmtSize(totalSize)}</span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          <button onClick={() => setView("table")} style={{ ...btn, padding: "4px 10px", fontSize: 11, color: view === "table" ? T.amber : T.sub, borderColor: view === "table" ? T.amber : T.line }}>▤ Tabella</button>
+          <button onClick={() => setView("gallery")} style={{ ...btn, padding: "4px 10px", fontSize: 11, color: view === "gallery" ? T.amber : T.sub, borderColor: view === "gallery" ? T.amber : T.line }}>▦ Galleria</button>
+        </div>
+      </div>
+
+      {files.length === 0 ? <Empty>Nessun file. Trascinane uno qui sopra.</Empty> : view === "table" ? (
+        <div>
+          <div style={{ display: "flex", gap: 8, padding: "6px 10px", fontSize: 11, color: T.sub, textTransform: "uppercase", letterSpacing: ".06em", borderBottom: "1px solid " + T.line }}>
+            <span style={{ width: 24 }}></span><span style={{ flex: 1 }}>Nome</span><span style={{ width: 90 }}>Tipo</span><span style={{ width: 70 }}>Dim.</span><span style={{ width: 80 }}>Data</span><span style={{ width: 60 }}></span>
+          </div>
+          {files.map((f) => (
+            <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: "1px solid " + T.line, fontSize: 13 }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = T.glass)} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+              <span style={{ width: 24, fontSize: 18 }}>{fileIcon(f.type)}</span>
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => f.type.startsWith("image/") ? setPreview(f) : openFile(f)}>{f.name}</span>
+              <span style={{ width: 90, fontSize: 11, color: T.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.type.split("/")[1] || f.type}</span>
+              <span style={{ width: 70, fontSize: 11.5, color: T.sub }}>{fmtSize(f.size)}</span>
+              <span style={{ width: 80, fontSize: 11, color: T.sub }}>{new Date(f.ts).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" })}</span>
+              <span style={{ width: 60, display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <button onClick={() => downloadFile(f)} title="Scarica" style={{ background: "none", border: "none", color: T.cyan, cursor: "pointer", fontSize: 13 }}>↓</button>
+                <button onClick={() => { if (confirm("Eliminare " + f.name + "?")) FILES.remove(f.id); }} title="Elimina" style={{ background: "none", border: "none", color: T.danger, cursor: "pointer", fontSize: 13 }}>✕</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))", gap: 12 }}>
+          {files.map((f) => (
+            <div key={f.id} style={{ border: "1px solid " + T.line, borderRadius: 12, overflow: "hidden", cursor: "pointer" }} onClick={() => f.type.startsWith("image/") ? setPreview(f) : openFile(f)}>
+              <div style={{ height: 90, background: "rgba(122,150,210,.06)", display: "grid", placeItems: "center", overflow: "hidden" }}>
+                {f.type.startsWith("image/") ? <img src={f.data} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 38 }}>{fileIcon(f.type)}</span>}
+              </div>
+              <div style={{ padding: "8px 10px" }}>
+                <div style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+                <div style={{ fontSize: 10.5, color: T.sub, display: "flex", justifyContent: "space-between", marginTop: 2 }}><span>{fmtSize(f.size)}</span>
+                  <span><button onClick={(e) => { e.stopPropagation(); downloadFile(f); }} style={{ background: "none", border: "none", color: T.cyan, cursor: "pointer" }}>↓</button>
+                  <button onClick={(e) => { e.stopPropagation(); if (confirm("Eliminare " + f.name + "?")) FILES.remove(f.id); }} style={{ background: "none", border: "none", color: T.danger, cursor: "pointer" }}>✕</button></span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* anteprima immagine */}
+      {preview && (
+        <div onClick={() => setPreview(null)} style={{ position: "fixed", inset: 0, zIndex: 700, background: "rgba(5,8,18,.85)", display: "grid", placeItems: "center", padding: 30 }}>
+          <img src={preview.data} alt={preview.name} style={{ maxWidth: "90%", maxHeight: "85%", borderRadius: 12, boxShadow: "0 30px 80px rgba(0,0,0,.6)" }} />
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 const INBOX = {
   add: (text) => store.set((s) => ({ inbox: [{ id: uid(), text, ts: now() }, ...s.inbox] })),
   remove: (id) => store.set((s) => ({ inbox: s.inbox.filter((i) => i.id !== id) })),
@@ -1237,38 +1309,6 @@ function RemindersPanel({ onClose }) {
 /* ===== CURSORE PERSONALIZZATO + particelle al click ===== */
 
 /* ===== COPERTINA SHADER animata ===== */
-function ShaderCover({ variant }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const cv = ref.current, gl = cv.getContext("webgl", { alpha: true }); if (!gl) return;
-    const reduced = prefersReduced();
-    const frag = [
-      "precision highp float; uniform vec2 u_res; uniform float u_t; uniform float u_v;",
-      "void main(){ vec2 uv=gl_FragCoord.xy/u_res.xy; float t=u_t;",
-      "  vec3 a=vec3(0.91,0.64,0.24), b=vec3(0.37,0.83,0.78), c=vec3(0.55,0.4,0.9);",
-      "  if(u_v>1.5){ a=vec3(0.78,1.0,0.18); b=vec3(0.6,1.0,0.18); c=vec3(0.1,0.1,0.1); }",
-      "  else if(u_v>0.5){ a=vec3(1.0,0.42,0.83); b=vec3(0.54,0.42,1.0); c=vec3(0.2,0.1,0.3); }",
-      "  float w=sin(uv.x*6.0+t)*0.5+0.5; float w2=sin(uv.y*5.0-t*0.7+uv.x*3.0)*0.5+0.5;",
-      "  vec3 col=mix(mix(a,b,w),c,w2*0.6);",
-      "  gl_FragColor=vec4(col,1.0); }"
-    ].join("\n");
-    const vert = "attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}";
-    const sh = (ty, s) => { const x = gl.createShader(ty); gl.shaderSource(x, s); gl.compileShader(x); return x; };
-    const pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, vert)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, frag)); gl.linkProgram(pr); gl.useProgram(pr);
-    const bf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-    const lc = gl.getAttribLocation(pr, "p"); gl.enableVertexAttribArray(lc); gl.vertexAttribPointer(lc, 2, gl.FLOAT, false, 0, 0);
-    const uR = gl.getUniformLocation(pr, "u_res"), uT = gl.getUniformLocation(pr, "u_t"), uV = gl.getUniformLocation(pr, "u_v");
-    const vmap = { aurora: 0, vapor: 1, acid: 2 };
-    const resize = () => { cv.width = cv.clientWidth; cv.height = cv.clientHeight; gl.viewport(0, 0, cv.width, cv.height); };
-    resize();
-    let raf, start = performance.now(), last = 0;
-    const loop = (n) => { raf = requestAnimationFrame(loop); if (n - last < 1000 / 30) return; last = n;
-      gl.uniform2f(uR, cv.width, cv.height); gl.uniform1f(uT, reduced ? 0 : (n - start) / 1000); gl.uniform1f(uV, vmap[variant] || 0); gl.drawArrays(gl.TRIANGLES, 0, 3); };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [variant]);
-  return <canvas ref={ref} style={{ width: "100%", height: "100%", display: "block" }} />;
-}
 
 /* ===== TRANSIZIONE "vinile/cassetta" al cambio sezione ===== */
 function VinylTransition({ trigger }) {
@@ -1393,28 +1433,6 @@ function GuestView({ pageId }) {
 }
 
 /* ===== TIME MACHINE (cronologia visiva) ===== */
-function TimeMachine({ onClose }) {
-  const [idx, setIdx] = useState(history.past.length);
-  const snaps = history.past.concat([snapshot()]);
-  const preview = (() => { try { return JSON.parse(snaps[idx] || snaps[snaps.length - 1]); } catch (e) { return null; } })();
-  const pageCount = preview ? Object.values(preview.pages).filter((p) => !p.trashed).length : 0;
-  const blockCount = preview ? Object.values(preview.blocks).reduce((a, b) => a + b.length, 0) : 0;
-  return (
-    <Modal title="Time Machine" onClose={onClose} width={560}>
-      <div style={{ textAlign: "center", padding: "10px 0 20px" }}>
-        <div style={{ fontSize: 13, color: T.cyan, marginBottom: 6 }}>Stato #{idx + 1} di {snaps.length}</div>
-        <div style={{ fontSize: 40, fontFamily: "'Nohemi',sans-serif", fontWeight: 800 }}>{pageCount} pagine</div>
-        <div style={{ fontSize: 13, color: T.sub }}>{blockCount} blocchi totali</div>
-      </div>
-      <input type="range" min={0} max={snaps.length - 1} value={idx} onChange={(e) => setIdx(+e.target.value)} style={{ width: "100%", accentColor: T.amber }} />
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: T.sub, marginTop: 4 }}><span>Più vecchio</span><span>Adesso</span></div>
-      <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "center" }}>
-        <button onClick={() => { if (snaps[idx]) { history.future = []; applySnap(snaps[idx]); toast("Tornato allo stato #" + (idx + 1)); onClose(); } }} style={btnAmber}>Ripristina questo stato</button>
-        <button onClick={onClose} style={btn}>Annulla</button>
-      </div>
-    </Modal>
-  );
-}
 
 /* ===== EXPORT PDF + IMPORT ===== */
 function exportPDF(page, blocks) {
@@ -1477,15 +1495,14 @@ export default function App() {
   const settings = useStore((s) => s.settings);
   const [palette, setPalette] = useState(false);
   const [trash, setTrash] = useState(false);
-  const [templates, setTemplates] = useState(false);
   const [profile, setProfile] = useState(false);
   const [lumi, setLumi] = useState(false);
   const [focus, setFocus] = useState(false);
+  const [filesP, setFilesP] = useState(false);
   const [capture, setCapture] = useState(false);
   const [inbox, setInbox] = useState(false);
   const [reminders, setReminders] = useState(false);
   const [stats, setStats] = useState(false);
-  const [timeMachine, setTimeMachine] = useState(false);
   const [importP, setImportP] = useState(false);
   const [publishFor, setPublishFor] = useState(null);
 
@@ -1526,8 +1543,8 @@ export default function App() {
       </div>
       <ToastHost />
       <div style={{ position: "relative", zIndex: 5, display: "flex" }}>
-        <Sidebar onSearch={() => setPalette(true)} onTrash={() => setTrash(true)} onTemplates={() => setTemplates(true)} user={user} onProfile={() => setProfile(true)}
-          extra={{ onFocus: () => setFocus(true), onInbox: () => setInbox(true), onReminders: () => setReminders(true), onStats: () => setStats(true), onTimeMachine: () => setTimeMachine(true), onImport: () => setImportP(true) }} />
+        <Sidebar onSearch={() => setPalette(true)} onTrash={() => setTrash(true)} user={user} onProfile={() => setProfile(true)}
+          extra={{ onFocus: () => setFocus(true), onFiles: () => setFilesP(true), onInbox: () => setInbox(true), onReminders: () => setReminders(true), onStats: () => setStats(true), onImport: () => setImportP(true) }} />
         <main style={{ flex: 1, minWidth: 0 }}>
           <Topbar onPublish={() => setPublishFor(pid)} onPDF={() => exportPDF(store.get().pages[pid], store.get().blocks[pid] || [])} />
           <Editor pageId={pid} key={pid} />
@@ -1539,12 +1556,11 @@ export default function App() {
       <QuickCapture open={capture} onClose={() => setCapture(false)} />
       <CommandPalette open={palette} onClose={() => setPalette(false)} extraActions={{ lumi: () => { setPalette(false); setLumi(true); }, capture: () => { setPalette(false); setCapture(true); }, focus: () => { setPalette(false); setFocus(true); } }} />
       {trash && <TrashPanel onClose={() => setTrash(false)} />}
-      {templates && <TemplatesPanel onClose={() => setTemplates(false)} />}
       {profile && <ProfileDialog user={user} onClose={() => setProfile(false)} />}
       {inbox && <InboxPanel onClose={() => setInbox(false)} />}
+      {filesP && <FileDatabase onClose={() => setFilesP(false)} />}
       {reminders && <RemindersPanel onClose={() => setReminders(false)} />}
       {stats && <StatsPanel onClose={() => setStats(false)} />}
-      {timeMachine && <TimeMachine onClose={() => setTimeMachine(false)} />}
       {importP && <ImportDialog onClose={() => setImportP(false)} />}
       {publishFor && <PublishDialog pageId={publishFor} onClose={() => setPublishFor(null)} />}
       {!online && <div style={{ position: "fixed", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 9000, background: T.danger, color: "#fff", padding: "4px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>Offline</div>}
