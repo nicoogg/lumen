@@ -1,0 +1,23 @@
+name: notify profile
+
+# After every push to main, asks the profile at nicoogg/nicoogg
+# to refresh right away (tables, banners, activity).
+# Needs the PROFILE_DISPATCH_TOKEN secret; without it, it skips quietly.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          TOKEN: ${{ secrets.PROFILE_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "::notice::PROFILE_DISPATCH_TOKEN missing, skipping"; exit 0; fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/nicoogg/nicoogg/dispatches \
+            -d '{"event_type":"update-profile"}'
